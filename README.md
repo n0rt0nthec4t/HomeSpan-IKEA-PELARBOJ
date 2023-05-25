@@ -1,5 +1,5 @@
 # HomeSpan IKEA PELARBOJ
-IKEA PELARBOJ modified using an ESP32, some mosfets and the HomeSpan Arduino library https://github.com/HomeSpan/HomeSpan to allow use in HomeKit
+IKEA PELARBOJ modified using an ESP32, some mosfets and the [HomeSpan Arduino library](https://github.com/HomeSpan/HomeSpan) to allow use in HomeKit
 
 Button pressing cycles between On, Fixed colour, Fixed colour cycling, Fading colour cycling and Off. Status of the light is reflected in HomeKit 
 
