@@ -13,6 +13,7 @@
 #define MODE_COLOUR_CYCLE 1
 #define MODE_COLOUR_LOCK 2
 #define MODE_COLOUR_FADE 3
+#define MAX_TIME_IN_MODE 10000
 #define COLOUR_CYCLE_INTERVAL 2000
 #define COLOUR_FADE_INTERVAL (40000 / 360)  // Time to show each colour in the hue colour wheel in milliseconds
 #define NO_PRESS 0
@@ -27,7 +28,8 @@ int mode = MODE_OFF;
 int hue = 0;
 int saturation = 0;
 int brightness = 100;
-float timer;
+float colourCycleTimer;
+float timeInMode;
 boolean power = false;
 
 // Custom class defintion for our LED
@@ -38,11 +40,10 @@ struct HomeKitLED : Service::LightBulb {
   SpanCharacteristic *HomeKitBrightness;  // reference to the Brightness Characteristic
 
   HomeKitLED() : Service::LightBulb() {
-    HomeKitPower = new Characteristic::On();
+    HomeKitPower = new Characteristic::On(power);
     HomeKitHue = new Characteristic::Hue(hue);  // 0 - 360
     HomeKitSaturation = new Characteristic::Saturation(saturation); // 0 - 100%
     HomeKitBrightness = new Characteristic::Brightness(brightness); // 0 - 100 %
-    HomeKitBrightness->setRange(0, 100, 1); // sets the range of the Brightness to be from a min of 0%, to a max of 100%, in steps of 1%
   }  // end constructor
 
   boolean update() {
@@ -90,10 +91,19 @@ struct HomeKitLED : Service::LightBulb {
 
   void loop() {
     // We'll use the HomeSpan update loop to update HomeKit seperately
-    HomeKitPower->setVal(power);
-    HomeKitHue->setVal(hue);
-    HomeKitSaturation->setVal(saturation);
-    HomeKitBrightness->setVal(brightness);
+    // Only update the characteristics we use if they have changed
+    if (HomeKitPower->getVal() != power) {
+      HomeKitPower->setVal(power);
+    }
+    if (HomeKitHue->getVal() != hue) {
+      HomeKitHue->setVal(hue);
+    }
+    if (HomeKitSaturation->getVal() != saturation) {
+      HomeKitSaturation->setVal(saturation);
+    }
+    if (HomeKitBrightness->getVal() != brightness) {
+      HomeKitBrightness->setVal(brightness);
+    }
   } // end loop
 };
 
@@ -180,10 +190,10 @@ void setup() {
   new Characteristic::Name("IKEA PELARBOJ Light");
   new Characteristic::SerialNumber("304.230.17");  // IKEA product code, 68:EC:8A:xx:xx:xx??
 
-  // Configure HomeKit lightbulb
-  new HomeKitLED();
+  new HomeKitLED();  // Configure HomeKit lightbulb
 
-  timer = millis();
+  colourCycleTimer = millis(); // Get current time
+  timeInMode = millis(); // Get current time
 
   homeSpan.autoPoll();
 }  // end setup
@@ -192,14 +202,21 @@ void loop() {
   int buttonPress = buttonCheck(BUTTON_PIN);  // Perform a check of the push button first
 
   // Determined the button presss type, so now action it
+  // If the current light mode has been active for more than 10secs, the next press of the button will turn off, rather than cycle modes
   if (buttonPress == SINGLE_PRESS) {
     // We need to cycle the lights operating modes
-
-    timer = millis(); // Update timer
     mode++;
     if (mode > MODE_COLOUR_FADE) {
       mode = MODE_OFF;
     }
+
+    if (mode != MODE_OFF && (millis() - timeInMode) > MAX_TIME_IN_MODE) {
+      // Current mode has been active for more than 10 seconds, so mode will be OFF
+      mode = MODE_OFF;
+    }
+
+    colourCycleTimer = millis(); // Update colour cycle time
+    timeInMode = millis(); // Updated time in this mode
 
     if (mode == MODE_COLOUR_CYCLE) {
       // Set colour we start with, in this case, white
@@ -252,12 +269,12 @@ void loop() {
     bluePin->set(0);
   }
 
-  if (mode == MODE_COLOUR_CYCLE && (millis() - timer) > COLOUR_CYCLE_INTERVAL) {
+  if (mode == MODE_COLOUR_CYCLE && (millis() - colourCycleTimer) > COLOUR_CYCLE_INTERVAL) {
     LEDFixedColourCycle();
-    timer = millis();
+    colourCycleTimer = millis();
   }
-  if (mode == MODE_COLOUR_FADE && (millis() - timer) > COLOUR_FADE_INTERVAL) {
+  if (mode == MODE_COLOUR_FADE && (millis() - colourCycleTimer) > COLOUR_FADE_INTERVAL) {
     LEDFadeColourCycle();
-    timer = millis();
+    colourCycleTimer = millis();
   }
 }  // end loop
