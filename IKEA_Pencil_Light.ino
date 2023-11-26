@@ -13,37 +13,48 @@
 #define MODE_COLOUR_CYCLE 1
 #define MODE_COLOUR_LOCK 2
 #define MODE_COLOUR_FADE 3
-#define MAX_TIME_IN_MODE 10000
-#define COLOUR_CYCLE_INTERVAL 2000
 #define COLOUR_FADE_INTERVAL (40000 / 360)  // Time to show each colour in the hue colour wheel in milliseconds
-#define NO_PRESS 0
-#define SINGLE_PRESS 1
-#define LONG_PRESS 2
 
-// Definbe our global variables
-LedPin *redPin;
-LedPin *greenPin;
-LedPin *bluePin;
-int mode = MODE_OFF;
-int hue = 0;
-int saturation = 0;
-int brightness = 100;
-float colourCycleTimer;
-float timeInMode;
-boolean power = false;
+  int currentLightMode = MODE_OFF;        // Current mode of the light
+  int hue = 0;
+  int saturation = 0;
+  int brightness = 100;                   //
+  float timer = millis();
+  boolean power = false;
 
 // Custom class defintion for our LED
-struct HomeKitLED : Service::LightBulb {
+struct RGB_LED : Service::LightBulb {  // RGB LED (Command Cathode)
+
+  LedPin *redPin, *greenPin, *bluePin;
+
   SpanCharacteristic *HomeKitPower;       // reference to the On Characteristic
   SpanCharacteristic *HomeKitHue;         // reference to the Hue Characteristic
   SpanCharacteristic *HomeKitSaturation;  // reference to the Saturation Characteristic
   SpanCharacteristic *HomeKitBrightness;  // reference to the Brightness Characteristic
 
-  HomeKitLED() : Service::LightBulb() {
-    HomeKitPower = new Characteristic::On(power);
-    HomeKitHue = new Characteristic::Hue(hue);  // 0 - 360
-    HomeKitSaturation = new Characteristic::Saturation(saturation); // 0 - 100%
-    HomeKitBrightness = new Characteristic::Brightness(brightness); // 0 - 100 %
+  int currentLightMode = MODE_OFF;        // Current mode of the light
+  int hue = 0;
+  int saturation = 0;
+  int brightness = 100;                   //
+  float timer = millis();
+  boolean power = false;
+  boolean updateHomeKit = false;          // flag if we need to updated HomeKit values due to a change
+
+  RGB_LED(int red_pin, int green_pin, int blue_pin)
+    : Service::LightBulb() {
+    new SpanButton(BUTTON_PIN, 15000, 2, 0, SpanButton::TRIGGER_ON_LOW);
+
+    HomeKitPower = new Characteristic::On();
+    HomeKitHue = new Characteristic::Hue(0);                  // instantiate the Hue Characteristic with an initial value of 0 out of 360
+    HomeKitSaturation = new Characteristic::Saturation(0);    // instantiate the Saturation Characteristic with an initial value of 0%
+    HomeKitBrightness = new Characteristic::Brightness(100);  // instantiate the Brightness Characteristic with an initial value of 100%
+    HomeKitBrightness->setRange(0, 100, 1);                   // sets the range of the Brightness to be from a min of 0%, to a max of 100%, in steps of 1%
+
+    this->redPin = new LedPin(red_pin, 0, 20000, false);      // configures a PWM LED for output to the RED pin
+    this->greenPin = new LedPin(green_pin, 0, 20000, false);  // configures a PWM LED for output to the GREEN pin
+    this->bluePin = new LedPin(blue_pin, 0, 20000, false);    // configures a PWM LED for output to the BLUE pin
+
+    Serial.printf("Configuring RGB LED: Pins=(%d,%d,%d)\n", redPin->getPin(), greenPin->getPin(), bluePin->getPin());
   }  // end constructor
 
   boolean update() {
@@ -51,137 +62,197 @@ struct HomeKitLED : Service::LightBulb {
       // HomeKit power status has change from either on -> off OR off -> on
       if (HomeKitPower->getNewVal() == false) {
         // Set colour to black ie: off
-        mode = MODE_OFF;
-        hue = 0;
-        saturation = 0;
-        power = false;
+        this->currentLightMode = MODE_OFF;
+        this->hue = 0;
+        this->saturation = 0;
+        this->power = false;
         Serial.print("HomeKit turned off\n");
       }
       if (HomeKitPower->getNewVal() == true) {
         // Set colour we start with, in this case, white
-        mode = MODE_COLOUR_LOCK;
-        hue = 0;
-        saturation = 0;
-        power = true;
+        this->currentLightMode = MODE_COLOUR_LOCK;
+        this->hue = 0;
+        this->saturation = 0;
+        this->power = true;
         Serial.print("HomeKit turned on, colour locked mode\n");
       }
     }
 
     if (HomeKitHue->updated() == true) {
       // Since hue changed from HomeKit, this means we'll set the light mode to be locked to a colour
-      mode = MODE_COLOUR_LOCK;
-      hue = HomeKitHue->getNewVal();
+      this->currentLightMode = MODE_COLOUR_LOCK;
+      this->hue = HomeKitHue->getNewVal();
       Serial.printf("HomeKit hue changed to %d\n", HomeKitHue->getNewVal());
     }
 
     if (HomeKitSaturation->updated() == true) {
       // Since saturation changed from HomeKit, this means we'll set the light mode to be locked to a colour
-      mode = MODE_COLOUR_LOCK;
-      saturation = HomeKitSaturation->getNewVal();
+      this->currentLightMode = MODE_COLOUR_LOCK;
+      this->saturation = HomeKitSaturation->getNewVal();
       Serial.printf("HomeKit saturation changed to %d\n", HomeKitSaturation->getNewVal());
     }
 
     if (HomeKitBrightness->updated() == true) {
-      brightness = HomeKitBrightness->getNewVal();
+      this->brightness = HomeKitBrightness->getNewVal();
       Serial.printf("HomeKit brightness changed to %d\n", HomeKitBrightness->getNewVal());
     }
 
     return (true);  // return true
-  } // end update
+  }                 // end update
 
   void loop() {
-    // We'll use the HomeSpan update loop to update HomeKit seperately
-    // Only update the characteristics we use if they have changed
-    if (HomeKitPower->getVal() != power) {
-      HomeKitPower->setVal(power);
+    // Update HomeKit to show the current HSV values
+    if (this->updateHomeKit == true) {
+      HomeKitHue->setVal(this->hue);
+      HomeKitSaturation->setVal(this->saturation);
+      HomeKitBrightness->setVal(this->brightness);
+      HomeKitPower->setVal(this->power);
+      this->updateHomeKit = false;
     }
-    if (HomeKitHue->getVal() != hue) {
-      HomeKitHue->setVal(hue);
+
+    // Output the current HSV values to the RGB LEDs
+    if (this->power == true) {
+      float red, green, blue;
+      LedPin::HSVtoRGB((float)this->hue, (this->saturation / (float)100), (this->brightness / (float)100), &red, &green, &blue);
+      int r = red * 100;
+      int g = green * 100;
+      int b = blue * 100;
+      redPin->set(r);
+      greenPin->set(g);
+      bluePin->set(b);
     }
-    if (HomeKitSaturation->getVal() != saturation) {
-      HomeKitSaturation->setVal(saturation);
+    if (this->power == false) {
+      // Power off, so no LED output
+      redPin->set(0);
+      greenPin->set(0);
+      bluePin->set(0);
     }
-    if (HomeKitBrightness->getVal() != brightness) {
-      HomeKitBrightness->setVal(brightness);
+
+    //Serial.printf("hue %d saturation %d brightness %d power %d timer %f (%f)\n", this->hue, this->saturation, this->brightness, this->power, this->timer, (millis() - this->timer));
+
+    if (this->currentLightMode == MODE_COLOUR_CYCLE && (millis() - this->timer) > 2000) {
+      this->timer = millis(); // Update timer
+      this->updateHomeKit = true;
+      LEDFixedColourCycle();
     }
-  } // end loop
+
+    if (this->currentLightMode == MODE_COLOUR_FADE && (millis() - this->timer) > COLOUR_FADE_INTERVAL) {
+      this->timer = millis(); // Update timer
+      this->updateHomeKit = true;
+      LEDFadeColourCycle();
+    }
+  }  // end loop
+
+  void button(int pin, int pType) override {
+    if (pType == SpanButton::SINGLE) {
+      // We need to cycle the lights operating modes
+
+      this->updateHomeKit = true;
+      this->timer = millis(); // Update timer
+      this->currentLightMode++;
+      if (this->currentLightMode > MODE_COLOUR_FADE) {
+        this->currentLightMode = MODE_OFF;
+      }
+
+      if (this->currentLightMode == MODE_COLOUR_CYCLE) {
+        // Set colour we start with, in this case, white
+        this->hue = 0;
+        this->saturation = 0;
+        this->brightness = 100; // Reset brightness to 100% if using physical button
+        this->power = true;  // Should be on
+        Serial.print("Button turned to colour cycle mode\n");
+      }
+
+      if (this->currentLightMode == MODE_COLOUR_LOCK) {
+        // We know last mode was colour cycling, so use the current values for hue, saturation and brightness
+        this->power = true;  // Should be on
+        Serial.print("Button turned to colour locked mode\n");
+      }
+
+      if (this->currentLightMode == MODE_COLOUR_FADE) {
+        // Set colour we start with, in this case, red
+        this->hue = 0;
+        this->saturation = 100;
+        this->power = true;  // Should be on
+        Serial.print("Button turned to colour fade mode\n");
+      }
+
+      if (this->currentLightMode == MODE_OFF) {
+        // Set colour to black ie: off
+        this->hue = 0;
+        this->saturation = 0;
+        this->power = false;  // Should be off
+        Serial.print("Button turned off\n");
+      }
+
+    }
+
+    if (pType == SpanButton::LONG) {
+        // We'll use this for resetting HomeKit paring Default for this is 15seonds
+        Serial.print("HomeKit pairing reset requested. To implement\n");
+    }
+  }  // end button
+
+  void LEDFixedColourCycle(void) {
+    // We are fixed colour cycling, so get the current values for hue, saturation and brightness
+    // From this, we'll work out the next colour to switch too
+    // White -> red -> orange -> yellow -> green -> blue -> purple
+
+    if (this->hue == 0 && this->saturation == 0) {
+      // Current colour is white, so move to red
+      this->hue = 0;
+      this->saturation = 100;
+    } else if (this->hue == 0 && this->saturation == 100) {
+      // Current colour is red, so move to orange
+      this->hue = 35;  // 39??
+      this->saturation = 100;
+    } else if (this->hue == 35 && this->saturation == 100) {
+      // Current colour is orange, so move to yellow
+      this->hue = 60;
+      this->saturation = 100;
+    } else if (this->hue == 60 && this->saturation == 100) {
+      // Current colour is yellow, so move to green
+      this->hue = 120;
+      this->saturation = 100;
+    } else if (this->hue == 120 && this->saturation == 100) {
+      // Current colour is green, so move to blue
+      this->hue = 240;
+      this->saturation = 100;
+    } else if (this->hue == 240 && this->saturation == 100) {
+      // Current colour is blue, so move to purple
+      this->hue = 280;  // 287?
+      this->saturation = 100;
+    } else if (this->hue == 280 && this->saturation == 100) {
+      // Current colour is purple, so move to white
+      // Ends our colour cycle and restarts
+      this->hue = 0;
+      this->saturation = 0;
+    }
+  }  // end LEDFixedColourCycle
+
+  void LEDFadeColourCycle(void) {
+    // We are fade colour cycling, so use the current values for hue, saturation and brightness
+    // to step around the hue colour wheel, starting from the current hue and adjusting the hue value in steps
+    this->hue++;
+    if (this->hue > 360) {
+      this->hue = 0;
+    }
+  }  // end LEDFadeColourCycle
 };
 
-int buttonCheck(int pin) {
-  int lastButtonState = digitalRead(pin);
-  delay(50); // debounce time
-  int currentButtonState = digitalRead(pin);
-  int pressType = NO_PRESS;
-  if (lastButtonState != currentButtonState) { // state changed
-    if (currentButtonState == HIGH) {
-      pressType = SINGLE_PRESS;
-    }
-  }
-  return pressType;
-} // end buttonCheck
-
-void LEDFixedColourCycle(void) {
-  // We are fixed colour cycling, so get the current values for hue, saturation and brightness
-  // From this, we'll work out the next colour to switch too
-  // White -> red -> orange -> yellow -> green -> blue -> purple
-
-  if (hue == 0 && saturation == 0) {
-    // Current colour is white, so move to red
-    hue = 0;
-    saturation = 100;
-  } else if (hue == 0 && saturation == 100) {
-    // Current colour is red, so move to orange
-    hue = 35;
-    saturation = 100;
-  } else if (hue == 35 && saturation == 100) {
-    // Current colour is orange, so move to yellow
-    hue = 60;
-    saturation = 100;
-  } else if (hue == 60 && saturation == 100) {
-    // Current colour is yellow, so move to green
-    hue = 120;
-    saturation = 100;
-  } else if (hue == 120 && saturation == 100) {
-    // Current colour is green, so move to blue
-    hue = 240;
-    saturation = 100;
-  } else if (hue == 240 && saturation == 100) {
-    // Current colour is blue, so move to purple
-    hue = 280;
-    saturation = 100;
-  } else if (hue == 280 && saturation == 100) {
-    // Current colour is purple, so move to white
-    // Ends our colour cycle and restarts
-    hue = 0;
-    saturation = 0;
-  }
-}  // end LEDFixedColourCycle
-
-void LEDFadeColourCycle(void) {
-  // We are fade colour cycling, so use the current values for hue, saturation and brightness
-  // to step around the hue colour wheel, starting from the current hue and adjusting the hue value in steps
-  hue++;
-  if (hue > 360) {
-    hue = 0;
-  }
-}  // end LEDFadeColourCycle
 
 void setup() {
   Serial.begin(115200);
 
-  Serial.printf("Configured RGB LED: Pins=(%d,%d,%d)\n", LED_RED_PIN, LED_GREEN_PIN, LED_BLUE_PIN);
   pinMode(LED_RED_PIN, OUTPUT);
   pinMode(LED_GREEN_PIN, OUTPUT);
   pinMode(LED_BLUE_PIN, OUTPUT);
-  redPin = new LedPin(LED_RED_PIN, 0, 20000, false);      // configures a PWM LED for output to the RED pin
-  greenPin = new LedPin(LED_GREEN_PIN, 0, 20000, false);  // configures a PWM LED for output to the GREEN pin
-  bluePin = new LedPin(LED_BLUE_PIN, 0, 20000, false);    // configures a PWM LED for output to the BLUE pin
 
   homeSpan.setPairingCode(ACCESSORYPINCODE);
   homeSpan.begin(Category::Lighting, "IKEA PELARBOJ", "IKEAPELARBOJ", "IKEA PELARBOJ");
 
-  // Configure HomeKit accessory service
   new SpanAccessory();
+
   new Service::AccessoryInformation();
   new Characteristic::Identify();
   new Characteristic::FirmwareRevision("1.0.0");
@@ -190,91 +261,11 @@ void setup() {
   new Characteristic::Name("IKEA PELARBOJ Light");
   new Characteristic::SerialNumber("304.230.17");  // IKEA product code, 68:EC:8A:xx:xx:xx??
 
-  new HomeKitLED();  // Configure HomeKit lightbulb
-
-  colourCycleTimer = millis(); // Get current time
-  timeInMode = millis(); // Get current time
+  new RGB_LED(LED_RED_PIN, LED_GREEN_PIN, LED_BLUE_PIN);  // Create an RGB LED attached to pins
 
   homeSpan.autoPoll();
 }  // end setup
 
 void loop() {
-  int buttonPress = buttonCheck(BUTTON_PIN);  // Perform a check of the push button first
 
-  // Determined the button presss type, so now action it
-  // If the current light mode has been active for more than 10secs, the next press of the button will turn off, rather than cycle modes
-  if (buttonPress == SINGLE_PRESS) {
-    // We need to cycle the lights operating modes
-    mode++;
-    if (mode > MODE_COLOUR_FADE) {
-      mode = MODE_OFF;
-    }
-
-    if (mode != MODE_OFF && (millis() - timeInMode) > MAX_TIME_IN_MODE) {
-      // Current mode has been active for more than 10 seconds, so mode will be OFF
-      mode = MODE_OFF;
-    }
-
-    colourCycleTimer = millis(); // Update colour cycle time
-    timeInMode = millis(); // Updated time in this mode
-
-    if (mode == MODE_COLOUR_CYCLE) {
-      // Set colour we start with, in this case, white
-      hue = 0;
-      saturation = 0;
-      power = true;  // Should be on
-      Serial.print("Button turned to colour cycle mode\n");
-    }
-
-    if (mode == MODE_COLOUR_LOCK) {
-      // We know last mode was colour cycling, so use the current values for hue, saturation and brightness
-      power = true;  // Should be on
-      Serial.print("Button turned to colour locked mode\n");
-    }
-
-    if (mode == MODE_COLOUR_FADE) {
-      // Set colour we start with will be the current hue, except if white, in which case, we'll start from red
-      if (hue == 0 && saturation == 0) {
-        hue = 0;
-        saturation = 100;
-      }
-      power = true;  // Should be on
-      Serial.print("Button turned to colour fade mode\n");
-    }
-
-    if (mode == MODE_OFF) {
-      // Set colour to black ie: off
-      hue = 0;
-      saturation = 0;
-      power = false;  // Should be off
-      Serial.print("Button turned off\n");
-    }
-  }
-
-  // Output the current HSV values to the RGB LEDs
-  if (power == true) {
-    float red, green, blue;
-    LedPin::HSVtoRGB((float)hue, (saturation / (float)100), (brightness / (float)100), &red, &green, &blue);
-    int r = red * 100;
-    int g = green * 100;
-    int b = blue * 100;
-    redPin->set(r);
-    greenPin->set(g);
-    bluePin->set(b);
-  }
-  if (power == false) {
-    // Power off, so no LED output
-    redPin->set(0);
-    greenPin->set(0);
-    bluePin->set(0);
-  }
-
-  if (mode == MODE_COLOUR_CYCLE && (millis() - colourCycleTimer) > COLOUR_CYCLE_INTERVAL) {
-    LEDFixedColourCycle();
-    colourCycleTimer = millis();
-  }
-  if (mode == MODE_COLOUR_FADE && (millis() - colourCycleTimer) > COLOUR_FADE_INTERVAL) {
-    LEDFadeColourCycle();
-    colourCycleTimer = millis();
-  }
 }  // end loop
