@@ -1,10 +1,10 @@
-//
-#include "HomeSpan.h"       // HomeSpan library
-#include "extras/PwmPin.h"  // library of various PWM functions
+// Include required header files
+#include "HomeSpan.h"                       // Main HomeSpan library
+#include "extras/PwmPin.h"                  // HomeSpan support library for PWM functions
 
 // Define constants
-#define ACCESSORYNAME "IKEA"         // Used for manufacturer name of HomeKit device
-#define ACCESSORYPINCODE "03145154"  // HomeKit pairing code
+#define ACCESSORYNAME "IKEA"                // Used for manufacturer name of HomeKit device
+#define ACCESSORYPINCODE "03145154"         // HomeKit pairing code
 #define BUTTON_PIN 14
 #define LED_RED_PIN 15
 #define LED_GREEN_PIN 33
@@ -15,36 +15,29 @@
 #define MODE_COLOUR_FADE 3
 #define COLOUR_FADE_INTERVAL (40000 / 360)  // Time to show each colour in the hue colour wheel in milliseconds
 
-  int currentLightMode = MODE_OFF;        // Current mode of the light
-  int hue = 0;
-  int saturation = 0;
-  int brightness = 100;                   //
-  float timer = millis();
-  boolean power = false;
-
 // Custom class defintion for our LED
-struct RGB_LED : Service::LightBulb {  // RGB LED (Command Cathode)
+struct RGB_LED : Service::LightBulb {       // RGB LED (Command Cathode)
 
   LedPin *redPin, *greenPin, *bluePin;
 
-  SpanCharacteristic *HomeKitPower;       // reference to the On Characteristic
-  SpanCharacteristic *HomeKitHue;         // reference to the Hue Characteristic
-  SpanCharacteristic *HomeKitSaturation;  // reference to the Saturation Characteristic
-  SpanCharacteristic *HomeKitBrightness;  // reference to the Brightness Characteristic
+  SpanCharacteristic *HomeKitPower;         // reference to the HomeKit On Characteristic
+  SpanCharacteristic *HomeKitHue;           // reference to the HomeKit Hue Characteristic
+  SpanCharacteristic *HomeKitSaturation;    // reference to the HomeKit Saturation Characteristic
+  SpanCharacteristic *HomeKitBrightness;    // reference to the HomeKit Brightness Characteristic
 
-  int currentLightMode = MODE_OFF;        // Current mode of the light
-  int hue = 0;
-  int saturation = 0;
-  int brightness = 100;                   //
+  int currentLightMode = MODE_OFF;          // Current mode of the light
+  int hue = 0;                              // Inital LED hue
+  int saturation = 0;                       // Inital LED saturation 
+  int brightness = 100;                     // Inital LED brightness
   float timer = millis();
   boolean power = false;
-  boolean updateHomeKit = false;          // flag if we need to updated HomeKit values due to a change
+  boolean updateHomeKit = false;            // flag if we need to updated HomeKit values due to a change
 
   RGB_LED(int red_pin, int green_pin, int blue_pin)
     : Service::LightBulb() {
     new SpanButton(BUTTON_PIN, 15000, 2, 0, SpanButton::TRIGGER_ON_LOW);
 
-    HomeKitPower = new Characteristic::On();
+    HomeKitPower = new Characteristic::On(false);             // instantiate the Ob Characteristic with an initial of off
     HomeKitHue = new Characteristic::Hue(0);                  // instantiate the Hue Characteristic with an initial value of 0 out of 360
     HomeKitSaturation = new Characteristic::Saturation(0);    // instantiate the Saturation Characteristic with an initial value of 0%
     HomeKitBrightness = new Characteristic::Brightness(100);  // instantiate the Brightness Characteristic with an initial value of 100%
