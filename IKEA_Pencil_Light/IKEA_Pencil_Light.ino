@@ -1,6 +1,11 @@
+// Using HomeSpan library v2.1
+//
+// Code version 2024/12/28
+// Mark Hulskamp
+
 // Include required header files
 #include "HomeSpan.h"                       // Main HomeSpan library
-#include "extras/PwmPin.h"                  // HomeSpan support library for PWM functions
+#include "src/extras/PwmPin.h"              // HomeSpan support library for PWM functions
 
 // Define constants
 #define ACCESSORYNAME "IKEA"                // Used for manufacturer name of HomeKit device
