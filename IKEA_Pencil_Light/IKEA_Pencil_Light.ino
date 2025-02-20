@@ -1,11 +1,10 @@
-// Using HomeSpan library v2.1
+// Using HomeSpan library v2.1.x
 //
-// Code version 2024/12/28
+// Code version 2025/02/21
 // Mark Hulskamp
 
 // Include required header files
 #include "HomeSpan.h"                       // Main HomeSpan library
-#include "src/extras/PwmPin.h"              // HomeSpan support library for PWM functions
 
 // Define constants
 #define ACCESSORYNAME "IKEA"                // Used for manufacturer name of HomeKit device
@@ -61,16 +60,15 @@ struct RGB_LED : Service::LightBulb {       // RGB LED (Command Cathode)
       if (HomeKitPower->getNewVal() == false) {
         // Set colour to black ie: off
         this->currentLightMode = MODE_OFF;
-        this->hue = 0;
-        this->saturation = 0;
         this->power = false;
         Serial.print("HomeKit turned off\n");
       }
       if (HomeKitPower->getNewVal() == true) {
-        // Set colour we start with, in this case, white
+        // Turning on from HomeKit, so we'll use the HomeKit values for hue, saturation and brightness
         this->currentLightMode = MODE_COLOUR_LOCK;
-        this->hue = 0;
-        this->saturation = 0;
+        this->hue = HomeKitHue->getVal();
+        this->saturation = HomeKitSaturation->getVal();
+        this->brightness = HomeKitBrightness->getVal();
         this->power = true;
         Serial.print("HomeKit turned on, colour locked mode\n");
       }
