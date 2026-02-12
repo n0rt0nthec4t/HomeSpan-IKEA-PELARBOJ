@@ -1,6 +1,6 @@
 // Using HomeSpan library v2.1.x
 //
-// Code version 2025/02/21
+// Code version 2026.02.12
 // Mark Hulskamp
 
 // Include required header files
@@ -110,13 +110,21 @@ struct RGB_LED : Service::LightBulb {       // RGB LED (Command Cathode)
     if (this->power == true) {
       float red, green, blue;
       LedPin::HSVtoRGB((float)this->hue, (this->saturation / (float)100), (this->brightness / (float)100), &red, &green, &blue);
-      int r = red * 100;
-      int g = green * 100;
-      int b = blue * 100;
+
+      // Apply gamma correction and channel calibration
+      float gamma = 2.2;
+      float rFactor = 1.2; // boost red
+      float gFactor = 1.0;
+      float bFactor = 0.9; // reduce blue
+      int r = constrain(pow(red, gamma) * 100 * rFactor, 0, 100);
+      int g = constrain(pow(green, gamma) * 100 * gFactor, 0, 100);
+      int b = constrain(pow(blue, gamma) * 100 * bFactor, 0, 100);
+      
       redPin->set(r);
       greenPin->set(g);
       bluePin->set(b);
     }
+    
     if (this->power == false) {
       // Power off, so no LED output
       redPin->set(0);
@@ -229,10 +237,7 @@ struct RGB_LED : Service::LightBulb {       // RGB LED (Command Cathode)
   void LEDFadeColourCycle(void) {
     // We are fade colour cycling, so use the current values for hue, saturation and brightness
     // to step around the hue colour wheel, starting from the current hue and adjusting the hue value in steps
-    this->hue++;
-    if (this->hue > 360) {
-      this->hue = 0;
-    }
+    this->hue = (this->hue + 1) % 360;
   }  // end LEDFadeColourCycle
 };
 
