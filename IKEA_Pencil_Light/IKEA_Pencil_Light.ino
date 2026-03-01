@@ -1,6 +1,6 @@
 // Using HomeSpan library v2.1.x
 //
-// Code version 2026.02.12
+// Code version 2026.03.01
 // Mark Hulskamp
 
 // Include required header files
@@ -109,17 +109,49 @@ struct RGB_LED : Service::LightBulb {       // RGB LED (Command Cathode)
     // Output the current HSV values to the RGB LEDs
     if (this->power == true) {
       float red, green, blue;
-      LedPin::HSVtoRGB((float)this->hue, (this->saturation / (float)100), (this->brightness / (float)100), &red, &green, &blue);
+
+      // Convert HomeKit values
+      float sat = this->saturation / 100.0;
+      float val = this->brightness / 100.0;
+
+      // Clamp very low saturation to prevent washed-out pastel colours
+      if (sat > 0 && sat < 0.35) {
+        sat = 0.35;   // minimum 35% saturation
+      }
+
+      LedPin::HSVtoRGB(
+          (float)this->hue,
+          sat,
+          val,
+          &red,
+          &green,
+          &blue
+      );
 
       // Apply gamma correction and channel calibration
       float gamma = 2.2;
-      float rFactor = 1.2; // boost red
+      float rFactor = 1.2;
       float gFactor = 1.0;
-      float bFactor = 0.9; // reduce blue
+      float bFactor = 0.9;
+
       int r = constrain(pow(red, gamma) * 100 * rFactor, 0, 100);
       int g = constrain(pow(green, gamma) * 100 * gFactor, 0, 100);
       int b = constrain(pow(blue, gamma) * 100 * bFactor, 0, 100);
-      
+
+      // Prevent LEDs collapsing to "off" at low brightness due to gamma + integer rounding
+      int minPWM = 2;  // try 2 first; if it still drops out, bump to 3 or 4
+      if (this->brightness > 0) {
+        if (r == 0 && red > 0) {
+          r = minPWM;
+        }
+        if (g == 0 && green > 0) {
+          g = minPWM;
+        }
+        if (b == 0 && blue > 0) {
+          b = minPWM;
+        }
+      }
+
       redPin->set(r);
       greenPin->set(g);
       bluePin->set(b);
